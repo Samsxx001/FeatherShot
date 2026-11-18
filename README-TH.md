@@ -1,4 +1,4 @@
-# FeatherShot 0.1.5
+# FeatherShot 0.1.6
 
 โปรแกรมแคปหน้าจอสำหรับ Windows 10/11 แบบ portable เขียนด้วย Rust และ Win32 โดยตรง ใช้หน้าต่างและปุ่มของ Windows ไม่มี WebView หรือวงจร polling ขณะรอ ปล่อยหน่วยความจำภาพเต็มเมื่อแคปเสร็จ และเก็บเฉพาะภาพย่อในหน้าหลัก
 
@@ -29,6 +29,8 @@
 | แคปทุกหน้าจอ | Ctrl+Shift+F |
 
 ## ตั้งค่าปุ่มลัดเอง
+
+**ปิดปุ่มลัด Snipping Tool ขณะใช้ FeatherShot:** ใน **Customize hotkeys** เปิด **Block Snipping Tool shortcuts while running** แล้วกด **Save shortcuts** จะกัน PrtSc (ไม่มี modifier) และ Win+Shift+S ไม่ให้เรียก Snipping Tool ขณะ FeatherShot ทำงาน รวมถึงตอนซ่อนใน system tray ถ้าปุ่มนั้นตั้งให้ FeatherShot อยู่แล้ว จะยังแคปตามโหมดที่ตั้งไว้ หากไม่ได้ตั้งไว้ ปุ่มนั้นจะไม่ทำงาน ตัวเลือกเริ่มต้นเป็นปิด บันทึกไว้ใน settings.ini ปิดตัวเลือกแล้ว Save หรือ Quit เพื่อคืนการทำงานให้ Windows ไม่เปลี่ยน registry และยังเปิด Snipping Tool จาก Start ได้ตามปกติ
 
 1. กด **Customize hotkeys** ในหน้าหลัก หรือจากเมนูคลิกขวาที่ไอคอนถาดระบบ
 2. คลิกช่องของโหมดที่ต้องการ แล้วกดปุ่มชุดใหม่ เช่น **Ctrl+Alt+A** หรือ **Shift+F8** หากต้องการใช้ปุ่ม Windows ให้ติ๊ก **Win** ข้างช่อง เช่น บันทึก **Shift+S** แล้วติ๊ก **Win** จะได้ **Win+Shift+S**

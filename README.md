@@ -6,13 +6,14 @@ A lightweight, portable screenshot tool for Windows 10/11, built with Rust and n
 
 ## Install
 
-Download `FeatherShot-0.1.5-win64.zip` from Releases, extract it into a writable folder, and run `FeatherShot.exe`. Screenshots and settings are saved beside the executable. To update, quit FeatherShot and replace the executable; keep your `settings.ini` and `Screenshots` folder.
+Download `FeatherShot-0.1.6-win64.zip` from Releases, extract it into a writable folder, and run `FeatherShot.exe`. Screenshots and settings are saved beside the executable. To update, quit FeatherShot and replace the executable; keep your `settings.ini` and `Screenshots` folder.
 
 ## Features
 
 - Capture a region, a visible window, or all screens; save PNG and copy to clipboard.
 - Customize global shortcuts, including Win combinations and Print Screen.
 - Presets for **Win+Shift+S** (region) and **PrtSc** (all screens).
+- Optional **Block Snipping Tool shortcuts while running** in Customize hotkeys. Save to apply. Blocks unassigned bare PrtSc and Win+Shift+S; assigned FeatherShot actions still capture. Off by default; quitting restores Windows behavior without registry changes. Snipping Tool can still be opened from Start.
 - Annotate with arrows, rectangles, pen strokes, and opaque redaction; undo/redo.
 - Capture delay, cursor option, and startup in a window or system tray.
 - Clicking or double-clicking the tray icon opens the main window.
