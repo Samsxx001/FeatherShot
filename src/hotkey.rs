@@ -166,6 +166,7 @@ pub struct Hotkeys {
     bindings: [Option<Binding>; 3],
     next_id: i32,
     hook: Option<WinHook>,
+    block_snipping: bool,
 }
 impl Hotkeys {
     pub fn new() -> Self {
@@ -173,6 +174,7 @@ impl Hotkeys {
             bindings: [None; 3],
             next_id: 20,
             hook: None,
+            block_snipping: false,
         }
     }
     unsafe fn acquire(&mut self, owner: HWND, key: Hotkey) -> Result<Binding> {
@@ -273,6 +275,7 @@ impl Hotkeys {
             .position(|binding| binding.is_some_and(|b| b.id as usize == id))
     }
     pub unsafe fn clear(&mut self, owner: HWND) {
+        self.block_snipping = false;
         for binding in self.bindings.iter().flatten() {
             if !binding.hooked {
                 UnregisterHotKey(owner, binding.id);
@@ -281,8 +284,35 @@ impl Hotkeys {
         self.bindings = [None; 3];
         self.sync_hook(owner);
     }
+    pub fn set_block_snipping(&mut self, owner: HWND, enabled: bool) -> Result<()> {
+        if enabled && self.hook.is_none() {
+            self.hook = Some(WinHook::start()?);
+        }
+        self.block_snipping = enabled;
+        self.sync_hook(owner);
+        Ok(())
+    }
+    pub unsafe fn replace_with_policy(
+        &mut self,
+        owner: HWND,
+        keys: &[Hotkey; 3],
+        enabled: bool,
+    ) -> Result<()> {
+        validate(keys)?;
+        let previous = self.block_snipping;
+        // Keep an existing hook until the new bindings have been acquired.
+        if enabled {
+            self.set_block_snipping(owner, true)?;
+        }
+        if let Err(error) = self.replace(owner, keys) {
+            self.set_block_snipping(owner, previous)?;
+            return Err(error);
+        }
+        self.set_block_snipping(owner, enabled)
+    }
     fn sync_hook(&mut self, owner: HWND) {
-        if self.bindings.iter().flatten().any(|b| b.hooked) {
+        if self.block_snipping || self.bindings.iter().flatten().any(|b| b.hooked) {
+            WinHook::block_snipping(self.block_snipping);
             WinHook::publish(
                 owner,
                 std::array::from_fn(|i| {

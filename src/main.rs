@@ -45,6 +45,7 @@ const RESET_KEYS: u16 = 405;
 const CANCEL_KEYS: u16 = 406;
 const WIN_SNIP: u16 = 407;
 const PRINT_SNIP: u16 = 408;
+const BLOCK_SNIPPING: u16 = 409;
 const ARROW: u16 = 201;
 const RECTANGLE: u16 = 202;
 const PEN: u16 = 203;
@@ -80,6 +81,7 @@ fn accent() -> u32 {
 
 #[derive(Clone)]
 struct Settings {
+    block_snipping: bool,
     delay: u32,
     no_copy: bool,
     cursor: bool,
@@ -90,6 +92,7 @@ struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            block_snipping: false,
             delay: 0,
             no_copy: false,
             cursor: false,
@@ -109,6 +112,7 @@ impl Settings {
                 Some(("copy", n)) => s.no_copy = n == "false",
                 Some(("cursor", n)) => s.cursor = n == "true",
                 Some(("start_in_tray", n)) => s.start_in_tray = n == "true",
+                Some(("block_snipping", n)) => s.block_snipping = n == "true",
                 Some(("hotkey_region", n)) => {
                     if let Some(key) = Hotkey::parse(n) {
                         s.hotkeys[0] = key;
@@ -134,8 +138,8 @@ impl Settings {
         std::fs::write(
             &temporary,
             format!(
-                "delay={}\ncopy={}\ncursor={}\nstart_in_tray={}\nhotkey_region={}\nhotkey_window={}\nhotkey_screen={}\n",
-                self.delay, !self.no_copy, self.cursor, self.start_in_tray, self.hotkeys[0].encode(), self.hotkeys[1].encode(), self.hotkeys[2].encode()
+                "delay={}\ncopy={}\ncursor={}\nstart_in_tray={}\nblock_snipping={}\nhotkey_region={}\nhotkey_window={}\nhotkey_screen={}\n",
+                self.delay, !self.no_copy, self.cursor, self.start_in_tray, self.block_snipping, self.hotkeys[0].encode(), self.hotkeys[1].encode(), self.hotkeys[2].encode()
             ),
         )
         .map_err(|e| e.to_string())?;
@@ -329,6 +333,7 @@ struct App {
     hotkeys_fonts: Option<Fonts>,
     hotkeys_status: String,
     hotkeys_win: [bool; 3],
+    hotkeys_block_snipping: bool,
     registered: Hotkeys,
     fonts: Fonts,
     dpi: u32,
@@ -362,6 +367,7 @@ impl App {
             return;
         }
         self.hotkeys_fonts = Some(Fonts::new(self.dpi));
+        self.hotkeys_block_snipping = self.settings.block_snipping;
         self.hotkeys_win = self
             .settings
             .hotkeys
@@ -374,7 +380,7 @@ impl App {
             left: 0,
             top: 0,
             right: (610 * self.dpi / 96) as i32,
-            bottom: (446 * self.dpi / 96) as i32,
+            bottom: (494 * self.dpi / 96) as i32,
         };
         AdjustWindowRectExForDpi(&mut rect, style, 0, 0, self.dpi);
         let mut parent: RECT = zeroed();
@@ -420,9 +426,14 @@ impl App {
                     }
                     key
                 });
-                match self.registered.replace(self.main, &keys) {
+                match self.registered.replace_with_policy(
+                    self.main,
+                    &keys,
+                    self.hotkeys_block_snipping,
+                ) {
                     Ok(()) => {
                         self.settings.hotkeys = keys;
+                        self.settings.block_snipping = self.hotkeys_block_snipping;
                         self.hotkey_warning.clear();
                         update_option_labels(self);
                         let mut tray: NOTIFYICONDATAW = zeroed();
@@ -456,6 +467,11 @@ impl App {
                 }
             }
             RESET_KEYS => {
+                self.hotkeys_block_snipping = false;
+                SetWindowTextW(
+                    GetDlgItem(self.hotkeys_hwnd, BLOCK_SNIPPING as i32),
+                    wide("[ ] Block Snipping Tool shortcuts while running").as_ptr(),
+                );
                 self.hotkeys_win = [false; 3];
                 for (i, key) in DEFAULTS.iter().enumerate() {
                     SendMessageW(
@@ -467,6 +483,19 @@ impl App {
                 }
                 self.hotkeys_status = "Defaults loaded. Click Save shortcuts to apply them.".into();
                 update_win_labels(self);
+            }
+            BLOCK_SNIPPING => {
+                self.hotkeys_block_snipping = !self.hotkeys_block_snipping;
+                SetWindowTextW(
+                    GetDlgItem(self.hotkeys_hwnd, BLOCK_SNIPPING as i32),
+                    wide(if self.hotkeys_block_snipping {
+                        "[x] Block Snipping Tool shortcuts while running"
+                    } else {
+                        "[ ] Block Snipping Tool shortcuts while running"
+                    })
+                    .as_ptr(),
+                );
+                self.hotkeys_status = "Blocks PrtSc and Win+Shift+S while running. Assigned FeatherShot shortcuts still capture. Quit restores Windows behavior. Save to apply.".into();
             }
             411..=413 => {
                 let index = (id - 411) as usize;
@@ -2417,6 +2446,22 @@ unsafe fn hotkeys_controls(hwnd: HWND, app: &App) {
         },
         s,
     );
+    button(
+        hwnd,
+        BLOCK_SNIPPING,
+        if app.hotkeys_block_snipping {
+            "[x] Block Snipping Tool shortcuts while running"
+        } else {
+            "[ ] Block Snipping Tool shortcuts while running"
+        },
+        Area {
+            x: 26,
+            y: 302,
+            w: 552,
+            h: 32,
+        },
+        s,
+    );
     for (id, label, x, w) in [
         (APPLY_KEYS, "Save shortcuts", 26, 172),
         (RESET_KEYS, "Restore defaults", 212, 178),
@@ -2428,7 +2473,7 @@ unsafe fn hotkeys_controls(hwnd: HWND, app: &App) {
             label,
             Area {
                 x,
-                y: 300,
+                y: 348,
                 w,
                 h: 40,
             },
@@ -2461,7 +2506,7 @@ unsafe extern "system" fn hotkeys_proc(hwnd: HWND, message: u32, w: WPARAM, l: L
                         x: 0,
                         y: 0,
                         w: 610,
-                        h: 446,
+                        h: 494,
                     },
                     bg(),
                 );
@@ -2499,7 +2544,7 @@ unsafe extern "system" fn hotkeys_proc(hwnd: HWND, message: u32, w: WPARAM, l: L
                     &app.hotkeys_status,
                     Area {
                         x: 26,
-                        y: 362,
+                        y: 410,
                         w: 552,
                         h: 66,
                     },
@@ -2698,6 +2743,7 @@ unsafe fn run() -> Result<()> {
         hotkeys_fonts: None,
         hotkeys_status: String::new(),
         hotkeys_win: [false; 3],
+        hotkeys_block_snipping: false,
         registered: Hotkeys::new(),
         fonts: Fonts::new(dpi),
         dpi,
@@ -2751,6 +2797,12 @@ unsafe fn run() -> Result<()> {
     if !app.registered.install(hwnd, &hotkeys).is_empty() {
         app.hotkey_warning =
             "Some shortcuts are busy. Click Customize hotkeys to change them.".into();
+    }
+    if let Err(error) = app
+        .registered
+        .set_block_snipping(hwnd, app.settings.block_snipping)
+    {
+        app.hotkey_warning = format!("Snipping Tool shortcut blocking could not start: {error}");
     }
     if !start_in_tray || !app.tray_added {
         app.show();
@@ -2905,6 +2957,7 @@ mod settings_tests {
         let path =
             std::env::temp_dir().join(format!("feathershot-settings-{}.ini", std::process::id()));
         let mut settings = Settings {
+            block_snipping: true,
             delay: 3,
             no_copy: true,
             cursor: true,
@@ -2919,15 +2972,18 @@ mod settings_tests {
         let loaded = Settings::load(&path);
         assert_eq!(loaded.hotkeys, settings.hotkeys);
         assert!(loaded.start_in_tray);
+        assert!(loaded.block_snipping);
         assert_eq!(
             (loaded.delay, loaded.no_copy, loaded.cursor),
             (3, true, true)
         );
         settings.hotkeys.swap(0, 1);
         settings.start_in_tray = false;
+        settings.block_snipping = false;
         settings.save(&path).unwrap();
         assert_eq!(Settings::load(&path).hotkeys, settings.hotkeys);
         assert!(!Settings::load(&path).start_in_tray);
+        assert!(!Settings::load(&path).block_snipping);
         std::fs::remove_file(&path).unwrap();
         assert_eq!(Settings::load(&path).hotkeys, DEFAULTS);
         assert!(!Settings::load(&path).start_in_tray);

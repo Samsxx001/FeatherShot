@@ -4,7 +4,7 @@ use crate::{hotkey::Hotkey, image::Result};
 use std::{
     cell::RefCell,
     ptr::{null, null_mut},
-    sync::atomic::{AtomicIsize, AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering},
     thread::JoinHandle,
 };
 use windows_sys::Win32::{
@@ -14,6 +14,7 @@ use windows_sys::Win32::{
 };
 
 static OWNER: AtomicIsize = AtomicIsize::new(0);
+static BLOCK_SNIPPING: AtomicBool = AtomicBool::new(false);
 static KEYS: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static IDS: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 
@@ -24,6 +25,7 @@ struct Decision {
 }
 
 struct KeyboardState {
+    block_snipping: bool,
     modifiers: [bool; 8],
     swallowed: [bool; 256],
 }
@@ -40,6 +42,7 @@ const MODIFIER_KEYS: [u32; 8] = [
 impl KeyboardState {
     fn new() -> Self {
         Self {
+            block_snipping: false,
             modifiers: [false; 8],
             swallowed: [false; 256],
         }
@@ -88,6 +91,16 @@ impl KeyboardState {
                 action: Some(index),
             };
         }
+        if self.block_snipping
+            && ((key == VK_SNAPSHOT as u32 && mods == 0)
+                || (key == 0x53 && mods == (MOD_WIN | MOD_SHIFT)))
+        {
+            self.swallowed[key as usize] = down;
+            return Decision {
+                consume: true,
+                action: None,
+            };
+        }
         Decision::default()
     }
 }
@@ -105,24 +118,28 @@ unsafe extern "system" fn keyboard_proc(code: i32, w: WPARAM, l: LPARAM) -> LRES
     }
     let down = w as u32 == WM_KEYDOWN || w as u32 == WM_SYSKEYDOWN;
     let targets = std::array::from_fn(|i| KEYS[i].load(Ordering::Acquire));
-    let decision = STATE.with(|state| state.borrow_mut().event(event.vkCode, down, &targets));
+    let (decision, win_held) = STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        state.block_snipping = BLOCK_SNIPPING.load(Ordering::Acquire);
+        let decision = state.event(event.vkCode, down, &targets);
+        (decision, state.modifiers[6] || state.modifiers[7])
+    });
+    // Mask Start even when a blocked chord has no FeatherShot action assigned.
+    if decision.consume && down && win_held {
+        let mut inputs: [INPUT; 2] = std::mem::zeroed();
+        for (i, input) in inputs.iter_mut().enumerate() {
+            input.r#type = INPUT_KEYBOARD;
+            input.Anonymous.ki = KEYBDINPUT {
+                wVk: 0xE8,
+                dwFlags: if i == 1 { KEYEVENTF_KEYUP } else { 0 },
+                ..std::mem::zeroed()
+            };
+        }
+        SendInput(2, inputs.as_ptr(), std::mem::size_of::<INPUT>() as i32);
+    }
     if let Some(index) = decision.action {
         let owner = OWNER.load(Ordering::Acquire) as HWND;
         if !owner.is_null() {
-            // An unassigned key masks the Start menu without suppressing Win-up
-            // (suppressing a modifier release can leave Windows believing it is held).
-            if (targets[index] >> 8) & MOD_WIN != 0 {
-                let mut inputs: [INPUT; 2] = std::mem::zeroed();
-                for (i, input) in inputs.iter_mut().enumerate() {
-                    input.r#type = INPUT_KEYBOARD;
-                    input.Anonymous.ki = KEYBDINPUT {
-                        wVk: 0xE8,
-                        dwFlags: if i == 1 { KEYEVENTF_KEYUP } else { 0 },
-                        ..std::mem::zeroed()
-                    };
-                }
-                SendInput(2, inputs.as_ptr(), std::mem::size_of::<INPUT>() as i32);
-            }
             PostMessageW(
                 owner,
                 WM_HOTKEY,
@@ -143,6 +160,9 @@ pub struct WinHook {
     thread: Option<JoinHandle<()>>,
 }
 impl WinHook {
+    pub fn block_snipping(enabled: bool) {
+        BLOCK_SNIPPING.store(enabled, Ordering::Release);
+    }
     pub fn start() -> Result<Self> {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         let thread = std::thread::Builder::new()
@@ -207,6 +227,7 @@ impl WinHook {
 }
 impl Drop for WinHook {
     fn drop(&mut self) {
+        Self::block_snipping(false);
         for key in &KEYS {
             key.store(0, Ordering::Release);
         }
@@ -223,6 +244,39 @@ impl Drop for WinHook {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn snipping_blocking_preserves_bindings_and_releases_keys() {
+        let mut state = KeyboardState::new();
+        let targets = [0, 0, VK_SNAPSHOT as u32];
+        state.block_snipping = true;
+        // Assigned Print Screen still captures; bare Print Screen without a binding only blocks.
+        assert_eq!(
+            state.event(VK_SNAPSHOT as u32, true, &targets).action,
+            Some(2)
+        );
+        state.event(VK_SNAPSHOT as u32, false, &targets);
+        assert!(state.event(VK_SNAPSHOT as u32, false, &[0; 3]).consume);
+        state.event(VK_LWIN as u32, true, &targets);
+        state.event(VK_LSHIFT as u32, true, &targets);
+        assert_eq!(
+            state.event(0x53, true, &targets),
+            Decision {
+                consume: true,
+                action: None
+            }
+        );
+        assert_eq!(state.event(0x41, true, &targets), Decision::default());
+        // Turning off mid-press still swallows the corresponding key-up.
+        state.block_snipping = false;
+        assert!(state.event(0x53, false, &targets).consume);
+        assert_eq!(state.event(0x53, true, &targets), Decision::default());
+        state.block_snipping = true;
+        let assigned = [((MOD_WIN | MOD_SHIFT) << 8) | 0x53, 0, 0];
+        assert_eq!(state.event(0x53, true, &assigned).action, Some(0));
+        state.event(0x53, false, &assigned);
+        state.event(VK_LCONTROL as u32, true, &assigned);
+        assert_eq!(state.event(0x53, true, &assigned), Decision::default());
+    }
     #[test]
     fn native_print_screen_dispatches_once_to_hidden_test_window() {
         unsafe {
