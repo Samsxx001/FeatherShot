@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Push-Location -LiteralPath $PSScriptRoot
 try {
     if (-not (Test-Path -LiteralPath 'dist/FeatherShot.exe')) { throw 'Run build.ps1 first.' }
-    Copy-Item -LiteralPath 'README-TH.md','VALIDATION-TH.md','LICENSE' -Destination dist
+    Copy-Item -LiteralPath 'README.md','README-TH.md','VALIDATION-TH.md','LICENSE' -Destination dist
     $featherMeta = (& cargo metadata --format-version 1 --locked --offline | ConvertFrom-Json)
     if ($LASTEXITCODE -ne 0) { throw 'Could not read dependency metadata.' }
     $featherVersion = ($featherMeta.packages | Where-Object { $_.name -eq 'feathershot' }).version
@@ -21,9 +21,9 @@ try {
         }
     }
     $featherNotices | Set-Content -LiteralPath dist/THIRD-PARTY.txt -Encoding utf8
-    $featherRelease = @('dist/FeatherShot.exe','dist/README-TH.md','dist/VALIDATION-TH.md','dist/LICENSE','dist/THIRD-PARTY.txt','dist/licenses')
+    $featherRelease = @('dist/FeatherShot.exe','dist/README.md','dist/README-TH.md','dist/VALIDATION-TH.md','dist/LICENSE','dist/THIRD-PARTY.txt','dist/licenses')
     Compress-Archive -LiteralPath $featherRelease -DestinationPath $featherReleaseZip -Force
-    $featherSourceFiles = @('Cargo.toml','Cargo.lock','build.rs','build.ps1','package.ps1','src','README-TH.md','VALIDATION-TH.md','LICENSE','.gitignore')
+    $featherSourceFiles = @('Cargo.toml','Cargo.lock','build.rs','build.ps1','package.ps1','src','README.md','README-TH.md','VALIDATION-TH.md','LICENSE','.gitignore')
     Compress-Archive -LiteralPath $featherSourceFiles -DestinationPath $featherSourceZip -Force
     Get-Item -LiteralPath 'dist/FeatherShot.exe',$featherReleaseZip,$featherSourceZip | Select-Object Name,Length
 } finally { Pop-Location }

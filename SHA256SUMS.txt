@@ -1,0 +1,2 @@
+1fcdf15805b3dec9b777d30e4fb310616636302d06d6118533f2fce9cec9d6ad  FeatherShot-0.1.5-win64.zip
+41179dc1a2509ec460fb8add94d7d7557e179c23e4789bf0d869b2d0f0c90600  FeatherShot-0.1.5-source.zip
