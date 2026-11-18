@@ -1,0 +1,8 @@
+/target/
+/dist/
+/test-output/
+/FeatherShot-*/
+/FeatherShot-*.zip
+**/Screenshots/
+**/settings.ini
+*.bak

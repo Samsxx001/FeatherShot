@@ -1,0 +1,23 @@
+[package]
+name = "feathershot"
+version = "0.1.5"
+edition = "2021"
+license = "MIT"
+description = "A small, native Windows screenshot and annotation utility"
+
+[dependencies]
+png = "0.18.1"
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation", "Win32_Security", "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm", "Win32_System_LibraryLoader", "Win32_System_Memory",
+    "Win32_System_DataExchange", "Win32_System_SystemInformation",
+    "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell",
+    "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_HiDpi", "Win32_UI_Controls"
+] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
